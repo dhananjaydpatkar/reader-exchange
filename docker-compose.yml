@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: reader_postgres
+    environment:
+      POSTGRES_USER: reader_user
+      POSTGRES_PASSWORD: reader_password
+      POSTGRES_DB: reader_cms
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: reader_backend
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_URL: postgres://reader_user:reader_password@postgres:5432/reader_cms
+    depends_on:
+      - postgres
+    command: npm run dev
+
+volumes:
+  postgres_data:
