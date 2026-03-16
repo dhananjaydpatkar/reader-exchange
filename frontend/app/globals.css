@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+:root {
+  /* Warm, paper-like background */
+  --background: #fdfbf7;
+  --foreground: #2d3748;
+  --primary: #4a5568;
+  --accent: #ed8936;
+  --paper: #ffffff;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: 'Merriweather', var(--font-sans), serif;
+  /* Serif font for better reading experience */
+  @apply antialiased overflow-x-hidden transition-colors duration-300;
+}
+
+/* Glassmorphism Utilities - Lighter Touch */
+.glass {
+  @apply bg-white/60 backdrop-blur-md border border-white/40 shadow-sm;
+}
+
+.glass-card {
+  @apply bg-white/80 backdrop-blur-sm border border-orange-100/50 shadow-md rounded-xl hover:shadow-lg transition-all duration-300;
+}
+
+.input-field {
+  @apply w-full px-4 py-3 rounded-lg bg-white border border-gray-200 focus:ring-2 focus:ring-orange-400/50 focus:border-orange-400 outline-none transition-all duration-300 text-gray-900 placeholder-gray-400;
+}
+
+.btn-primary {
+  @apply w-full py-3.5 rounded-lg bg-gradient-to-r from-orange-500 to-red-500 text-white font-serif font-bold tracking-wide shadow-md shadow-orange-500/20 hover:shadow-orange-500/40 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300;
+}
