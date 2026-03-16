@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany, ManyToOne } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany, ManyToOne, type Relation } from 'typeorm';
 import { Book } from './Book.js';
 import { ExchangeRequest } from './ExchangeRequest.js';
 import { Locality } from './Locality.js';
@@ -52,7 +52,7 @@ export class User {
     zipCode!: string;
 
     @ManyToOne(() => Locality, (locality) => locality.users, { nullable: true })
-    locality!: Locality;
+    locality!: Relation<Locality>;
 
     @Column({ type: 'int', default: 0 })
     credits!: number;

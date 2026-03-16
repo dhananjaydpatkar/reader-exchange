@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, type Relation } from 'typeorm';
 import { User } from './User.js';
 
 export enum BookStatus {
@@ -81,7 +81,7 @@ export class Book {
     }>;
 
     @ManyToOne(() => User, (user) => user.books)
-    owner!: User;
+    owner!: Relation<User>;
 
     @CreateDateColumn()
     createdAt!: Date;

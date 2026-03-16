@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, type Relation } from 'typeorm';
 import { User } from './User.js';
 import { Book } from './Book.js';
 
@@ -31,13 +31,13 @@ export class ExchangeRequest {
     id!: string;
 
     @ManyToOne(() => User, (user) => user.requests)
-    requester!: User;
+    requester!: Relation<User>;
 
     @ManyToOne(() => Book)
-    book!: Book;
+    book!: Relation<Book>;
 
     @ManyToOne(() => User, { nullable: true })
-    originalOwner!: User;
+    originalOwner!: Relation<User>;
 
     @Column({
         type: 'enum',
