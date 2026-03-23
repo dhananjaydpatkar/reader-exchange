@@ -35,7 +35,17 @@ export default function RegisterPage() {
     }, []);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        setFormData({ ...formData, [e.target.name]: e.target.value });
+        const { name, value } = e.target;
+        if (name === 'localityId') {
+            const selectedLocality = localities.find(loc => loc.id === value);
+            setFormData({
+                ...formData,
+                [name]: value,
+                zipCode: selectedLocality?.pinCode || ''
+            });
+        } else {
+            setFormData({ ...formData, [name]: value });
+        }
     };
 
     const handleRegister = async (e: React.FormEvent) => {
@@ -278,10 +288,10 @@ export default function RegisterPage() {
                                 name="zipCode"
                                 type="text"
                                 placeholder="Zip Code"
-                                className="input-field"
+                                className="input-field bg-gray-50 text-gray-500 cursor-not-allowed"
                                 value={formData.zipCode}
-                                onChange={handleChange}
                                 required
+                                readOnly
                             />
                         </div>
                     </div>
