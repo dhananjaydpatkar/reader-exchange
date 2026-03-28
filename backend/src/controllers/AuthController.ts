@@ -36,7 +36,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         return;
     }
 
-    const { email: rawEmail, password, name, role, addressLine1, addressLine2, city, state, zipCode, localityId, dateOfBirth, schoolName, grade, university, majors } = req.body;
+    const { email: rawEmail, password, name, role, addressLine1, addressLine2, city, state, zipCode, localityId, dateOfBirth, schoolName, grade, university, majors, securityQuestion, securityAnswer } = req.body;
     const email = rawEmail?.toLowerCase();
 
     try {
@@ -54,6 +54,11 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         const salt = await bcrypt.genSalt(10);
         const passwordHash = await bcrypt.hash(password, salt);
 
+        let securityAnswerHash;
+        if (securityAnswer) {
+            securityAnswerHash = await bcrypt.hash(securityAnswer.trim().toLowerCase(), salt);
+        }
+
         // Create user
         const userData: any = {
             email,
@@ -65,6 +70,8 @@ export const register = async (req: Request, res: Response): Promise<void> => {
             city,
             state,
             zipCode,
+            securityQuestion,
+            securityAnswerHash,
         };
 
         if (localityId) {
@@ -158,5 +165,121 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     } catch (error) {
         console.error('Login error:', error);
         res.status(500).json({ message: 'Server error' });
+    }
+};
+
+export const initForgotPassword = async (req: Request, res: Response): Promise<void> => {
+    const { email: rawEmail } = req.body;
+    const email = rawEmail?.toLowerCase();
+
+    if (!email) {
+        res.status(400).json({ message: 'Email is required' });
+        return;
+    }
+
+    try {
+        const user = await userRepository.findOneBy({ email });
+        if (!user) {
+            // Generic message so we don't leak who is registered
+            res.status(400).json({ message: 'If an account exists, a security question is required to reset it.', noQuestionSet: true });
+            return;
+        }
+
+        if (!user.securityQuestion || !user.securityAnswerHash) {
+            res.status(400).json({ message: 'No security question set for this account. Please contact an admin.', noQuestionSet: true });
+            return;
+        }
+
+        res.json({ securityQuestion: user.securityQuestion });
+    } catch (error) {
+        console.error('initForgotPassword error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+export const verifySecurityAnswer = async (req: Request, res: Response): Promise<void> => {
+    const { email: rawEmail, answer } = req.body;
+    const email = rawEmail?.toLowerCase();
+
+    if (!email || !answer) {
+        res.status(400).json({ message: 'Email and answer are required' });
+        return;
+    }
+
+    try {
+        const user = await userRepository.findOneBy({ email });
+        if (!user || !user.securityAnswerHash) {
+            res.status(400).json({ message: 'Invalid request' });
+            return;
+        }
+
+        const isMatch = await bcrypt.compare(answer.trim().toLowerCase(), user.securityAnswerHash);
+        if (!isMatch) {
+            res.status(400).json({ message: 'Incorrect answer' });
+            return;
+        }
+
+        const secret = process.env.JWT_SECRET;
+        if (!secret) {
+            throw new Error('CRITICAL: JWT_SECRET environment variable is not set!');
+        }
+
+        // Generate a reset token valid for 15 minutes
+        const resetToken = jwt.sign(
+            { id: user.id, email: user.email, purpose: 'password_reset' },
+            secret,
+            { expiresIn: '15m' }
+        );
+
+        res.json({ message: 'Answer verified', resetToken });
+    } catch (error) {
+        console.error('verifySecurityAnswer error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+export const resetPassword = async (req: Request, res: Response): Promise<void> => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        res.status(400).json({ errors: errors.array() });
+        return;
+    }
+
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+        res.status(400).json({ message: 'Token and new password are required' });
+        return;
+    }
+
+    try {
+        const secret = process.env.JWT_SECRET;
+        if (!secret) {
+            throw new Error('CRITICAL: JWT_SECRET environment variable is not set!');
+        }
+
+        const decoded: any = jwt.verify(token, secret);
+
+        if (decoded.purpose !== 'password_reset') {
+            res.status(400).json({ message: 'Invalid token purpose' });
+            return;
+        }
+
+        const user = await userRepository.findOneBy({ id: decoded.id });
+        if (!user) {
+            res.status(400).json({ message: 'User not found' });
+            return;
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(newPassword, salt);
+
+        user.passwordHash = passwordHash;
+        await userRepository.save(user);
+
+        res.json({ message: 'Password reset successful' });
+    } catch (error) {
+        console.error('resetPassword error:', error);
+        res.status(400).json({ message: 'Invalid or expired token' });
     }
 };

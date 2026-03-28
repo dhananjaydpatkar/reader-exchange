@@ -74,6 +74,12 @@ export class User {
     @Column({ type: 'text', nullable: true })
     majors!: string;
 
+    @Column({ type: 'text', nullable: true })
+    securityQuestion!: string;
+
+    @Column({ type: 'text', nullable: true })
+    securityAnswerHash!: string;
+
     @OneToMany(() => Book, (book) => book.owner)
     books!: Book[];
 

@@ -161,3 +161,7 @@ CREATE INDEX "IDX_exchange_req"     ON "exchange_request"("requesterId");
 CREATE INDEX "IDX_exchange_book"    ON "exchange_request"("bookId");
 CREATE INDEX "IDX_exchange_status"  ON "exchange_request"("status");
 CREATE INDEX "IDX_exchange_origown" ON "exchange_request"("originalOwnerId");
+
+ALTER TABLE "user" 
+ADD COLUMN IF NOT EXISTS "securityQuestion" text,
+ADD COLUMN IF NOT EXISTS "securityAnswerHash" text;

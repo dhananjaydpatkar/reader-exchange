@@ -21,18 +21,28 @@ export default function RegisterPage() {
         addressLine1: '',
         city: '',
         zipCode: '',
-        localityId: ''
+        localityId: '',
+        securityQuestion: '',
+        securityAnswer: ''
     });
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
 
     const [localities, setLocalities] = useState<any[]>([]);
+    const [isLoadingLocalities, setIsLoadingLocalities] = useState(false);
 
-    useEffect(() => {
-        api.get('/localities')
-            .then(res => setLocalities(res.data))
-            .catch(err => console.error('Failed to fetch localities', err));
-    }, []);
+    const loadLocalities = async () => {
+        if (localities.length > 0 || isLoadingLocalities) return;
+        setIsLoadingLocalities(true);
+        try {
+            const res = await api.get('/localities');
+            setLocalities(res.data);
+        } catch (err) {
+            console.error('Failed to fetch localities', err);
+        } finally {
+            setIsLoadingLocalities(false);
+        }
+    };
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
@@ -268,10 +278,14 @@ export default function RegisterPage() {
                                     name="localityId"
                                     className="input-field text-gray-700 appearance-none pr-10 bg-white"
                                     onChange={handleChange}
+                                    onFocus={loadLocalities}
+                                    onClick={loadLocalities}
                                     value={formData.localityId}
                                     required
                                 >
-                                    <option value="" disabled>Locality</option>
+                                    <option value="" disabled>
+                                        {isLoadingLocalities ? 'Loading localities...' : 'Locality'}
+                                    </option>
                                     {localities.map((loc) => (
                                         <option key={loc.id} value={loc.id} className="text-gray-900">
                                             {loc.name}
@@ -292,6 +306,52 @@ export default function RegisterPage() {
                                 value={formData.zipCode}
                                 required
                                 readOnly
+                            />
+                        </div>
+                    </div>
+
+                    {/* Security Info */}
+                    <div className="md:col-span-2 space-y-2 mt-4">
+                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Account Recovery</h3>
+                        <p className="text-xs text-gray-400">Please provide a security question and answer. This will be used to recover your account if you forget your password.</p>
+                    </div>
+
+                    <div className="md:col-span-2 space-y-2">
+                        <div className="relative">
+                            <Lock className="absolute left-4 top-3.5 h-5 w-5 text-gray-400 z-10" />
+                            <select
+                                name="securityQuestion"
+                                className="input-field text-gray-700 appearance-none bg-white pl-12 pr-10"
+                                value={formData.securityQuestion}
+                                onChange={handleChange}
+                                required
+                            >
+                                <option value="" disabled>Select a Security Question</option>
+                                <option value="Whats the brand of your first car?">Whats the brand of your first car?</option>
+                                <option value="What is your mother's maiden name?">What is your mother's maiden name?</option>
+                                <option value="What was the name of your first pet?">What was the name of your first pet?</option>
+                                <option value="What city were you born in?">What city were you born in?</option>
+                                <option value="What is the name of your favorite childhood teacher?">What is the name of your favorite childhood teacher?</option>
+                            </select>
+                            <div className="absolute right-4 top-4 pointer-events-none">
+                                <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="md:col-span-2 space-y-2">
+                        <div className="relative">
+                            <Lock className="absolute left-4 top-3.5 h-5 w-5 text-gray-400" />
+                            <input
+                                name="securityAnswer"
+                                type="text"
+                                placeholder="Security Answer"
+                                className="input-field pl-12"
+                                value={formData.securityAnswer}
+                                onChange={handleChange}
+                                required
                             />
                         </div>
                     </div>

@@ -27,7 +27,7 @@ frontend/build/
 # Express/TypeScript (backend)
 backend/dist/
 backend/build/
-
+backend/node_modules/
 # misc
 .DS_Store
 *.pem
