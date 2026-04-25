@@ -54,18 +54,6 @@ export default function Home() {
             </Link>
           </div>
 
-          {/* Hero Image Placeholder - Since generation failed, using a styled placeholder */}
-          <div className="mt-16 relative mx-auto max-w-4xl">
-            <div className="aspect-[16/9] rounded-2xl overflow-hidden shadow-2xl border-4 border-white bg-gray-100 flex items-center justify-center relative group">
-              {/* Abstract Book Shelf Representation */}
-              <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1507842217121-9e93a5cc3a6b?q=80&w=2800&auto=format&fit=crop')] bg-cover bg-center opacity-90 transition-transform duration-700 group-hover:scale-105"></div>
-              <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent"></div>
-              <div className="absolute bottom-6 left-8 text-left text-white">
-                <p className="text-sm font-medium uppercase tracking-wider opacity-80 mb-1">Featured Collection</p>
-                <h3 className="text-2xl font-bold">Modern Classics & Academic Texts</h3>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Features Grid */}
