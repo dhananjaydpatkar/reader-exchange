@@ -40,6 +40,9 @@ export class Book {
     @Column({ type: 'int', nullable: true })
     askingPrice!: number; // For sale
 
+    @Column({ type: 'int', default: 0 })
+    creditsRequired!: number; // For sale/rent via credits
+
     @Column({ type: 'boolean', default: true })
     isForExchange!: boolean;
 

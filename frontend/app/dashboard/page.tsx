@@ -1,10 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import api from '@/lib/api';
-import { LogOut, BookOpen, Repeat, Plus, Star, CheckCircle, XCircle, Clock, Truck, Shield, Search } from 'lucide-react';
+import BuyCreditsModal from '../../components/BuyCreditsModal';
+import CreditsLedgerTab from '../../components/CreditsLedgerTab';
+import AdminWithdrawals from '../../components/AdminWithdrawals';
+import AppTour from '../../components/AppTour';
+import { TOUR_PREFS } from '@/lib/tourConfig';
+import { LogOut, BookOpen, Repeat, Plus, Star, CheckCircle, XCircle, Clock, Truck, Shield, Search, HelpCircle } from 'lucide-react';
 
 export default function Dashboard() {
     const router = useRouter();
@@ -28,8 +33,7 @@ export default function Dashboard() {
         isForExchange: true,
         isForSale: false,
         isForRent: false,
-        askingPrice: '',
-        rentPrice: '',
+        creditsRequired: '',
         rentDuration: 14
     });
 
@@ -40,6 +44,26 @@ export default function Dashboard() {
     const [allExchanges, setAllExchanges] = useState<any[]>([]);
     const [localities, setLocalities] = useState<any[]>([]);
     const [newLocality, setNewLocality] = useState({ name: '', pinCode: '' });
+
+    const [buyCreditsOpen, setBuyCreditsOpen] = useState(false);
+    const [showTour, setShowTour] = useState(false);
+
+    // Tour tab change handler
+    const handleTourTabChange = useCallback((tabId: string) => {
+        setActiveTab(tabId);
+    }, []);
+
+    // Re-launch tour manually
+    const handleRelaunchTour = useCallback(() => {
+        // Clear session flag so tour shows again
+        sessionStorage.removeItem(TOUR_PREFS.SESSION_SHOWN);
+        // Clear skipped flag
+        localStorage.removeItem(TOUR_PREFS.SKIPPED);
+        localStorage.removeItem(TOUR_PREFS.LAST_SEEN_VERSION);
+        // Force re-mount by toggling
+        setShowTour(false);
+        setTimeout(() => setShowTour(true), 50);
+    }, []);
 
     useEffect(() => {
         // Check auth
@@ -53,6 +77,15 @@ export default function Dashboard() {
 
         const parsedUser = JSON.parse(userData);
         setUser(parsedUser);
+
+        // Fetch fresh user data from server to sync credits & other fields
+        api.get('/users/me')
+            .then(res => {
+                const freshUser = { ...parsedUser, ...res.data };
+                setUser(freshUser);
+                localStorage.setItem('user', JSON.stringify(freshUser));
+            })
+            .catch(err => console.error('Failed to fetch fresh user data', err));
 
         // Fetch initial data
         fetchBooks();
@@ -207,8 +240,7 @@ export default function Dashboard() {
             isForExchange: true,
             isForSale: false,
             isForRent: false,
-            askingPrice: '',
-            rentPrice: '',
+            creditsRequired: '',
             rentDuration: 14
         });
         setRelistModalOpen(true);
@@ -229,8 +261,7 @@ export default function Dashboard() {
                 isForExchange: relistData.isForExchange,
                 isForSale: relistData.isForSale,
                 isForRent: relistData.isForRent,
-                askingPrice: relistData.isForSale ? Number(relistData.askingPrice) : undefined,
-                rentPrice: relistData.isForRent ? Number(relistData.rentPrice) : undefined,
+                creditsRequired: (relistData.isForSale || relistData.isForRent) ? Number(relistData.creditsRequired) : 0,
                 rentDuration: relistData.isForRent ? Number(relistData.rentDuration) : undefined
             });
             alert('Book relisted successfully!');
@@ -281,12 +312,14 @@ export default function Dashboard() {
                 fetchLogistics();
             }
 
-            // If approved, credits increase
-            if (status === 'approved') {
-                const updatedUser = { ...user, credits: (user.credits || 0) + 1 };
-                setUser(updatedUser);
-                localStorage.setItem('user', JSON.stringify(updatedUser));
-            }
+            // Re-fetch fresh user data to sync credits after any status change
+            api.get('/users/me')
+                .then(res => {
+                    const freshUser = { ...user, ...res.data };
+                    setUser(freshUser);
+                    localStorage.setItem('user', JSON.stringify(freshUser));
+                })
+                .catch(err => console.error('Failed to refresh user data', err));
         } catch (error) {
             console.error('Failed to update request', error);
             alert('Failed to process request');
@@ -312,11 +345,18 @@ export default function Dashboard() {
 
     if (!user) return null;
 
+    // Enable tour on mount
+    if (!showTour && typeof window !== 'undefined') {
+        // Delay to avoid hydration mismatch
+        setTimeout(() => setShowTour(true), 100);
+    }
+
     const tabs = [
         { id: 'available', label: 'Books Available for You', icon: BookOpen },
         { id: 'my_books', label: 'My Books', icon: BookOpen },
         { id: 'history', label: 'Exchange History', icon: Clock },
         { id: 'requests', label: 'Active Requests', icon: Repeat },
+        { id: 'wallet', label: 'Wallet', icon: Star },
     ];
 
     if (user.role === 'local_admin') {
@@ -337,13 +377,21 @@ export default function Dashboard() {
                     <Link href="/" className="text-xl font-bold text-gray-900 hover:text-orange-600 transition-colors">
                         Reader Exchange
                     </Link>
+                    <button
+                        onClick={handleRelaunchTour}
+                        className="ml-2 p-1.5 rounded-lg hover:bg-orange-50 text-gray-400 hover:text-orange-500 transition-all duration-300 group"
+                        title="App Guide Tour"
+                        data-tour="help-button"
+                    >
+                        <HelpCircle className="h-5 w-5 group-hover:scale-110 transition-transform" />
+                    </button>
                 </div>
 
                 <div className="flex items-center space-x-6">
                     {/* Role Badge */}
                     {user.role === 'local_admin' && (
                         <span className="px-3 py-1 bg-purple-50 text-purple-700 border border-purple-100 text-xs font-bold rounded-full uppercase tracking-wider shadow-sm">
-                            Local Admin
+                            Local Admin{user.locality ? ` · ${user.locality.name} (${user.locality.pinCode})` : ''}
                         </span>
                     )}
                     {user.role === 'exchange_admin' && (
@@ -357,6 +405,7 @@ export default function Dashboard() {
                         <button
                             onClick={handleRequestLocalAdmin}
                             className="text-xs font-medium text-orange-600 hover:text-orange-700 underline underline-offset-2 decoration-orange-200"
+                            data-tour="become-admin"
                         >
                             Become Local Admin
                         </button>
@@ -370,10 +419,22 @@ export default function Dashboard() {
                     </div>
 
                     {/* Credits Display */}
-                    <div className="flex items-center space-x-1 px-4 py-1.5 bg-yellow-50 border border-yellow-100 rounded-full text-yellow-700 font-medium text-sm shadow-sm">
+                    <div
+                        className="flex items-center space-x-1 px-4 py-1.5 bg-yellow-50 border border-yellow-100 rounded-full text-yellow-700 font-medium text-sm shadow-sm hover:bg-yellow-100 cursor-pointer transition-colors"
+                        onClick={() => setBuyCreditsOpen(true)}
+                        data-tour="credits-display"
+                    >
                         <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
                         <span>{user.credits || 0} Credits</span>
                     </div>
+
+                    <button
+                        onClick={() => setBuyCreditsOpen(true)}
+                        className="px-4 py-1.5 bg-orange-600 text-white font-medium text-sm rounded-full shadow-sm shadow-orange-500/30 hover:bg-orange-700 transition-colors hidden sm:block"
+                        data-tour="add-credits"
+                    >
+                        Add Credits
+                    </button>
 
                     <button
                         onClick={handleLogout}
@@ -389,7 +450,7 @@ export default function Dashboard() {
             <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
 
                 {/* Summary Banner */}
-                <div className="relative overflow-hidden rounded-2xl bg-white border border-orange-100 shadow-xl shadow-orange-100/20">
+                <div className="relative overflow-hidden rounded-2xl bg-white border border-orange-100 shadow-xl shadow-orange-100/20" data-tour="summary-banner">
                     <div className="absolute top-0 right-0 w-64 h-64 bg-orange-50 rounded-full blur-3xl -z-0 translate-x-1/2 -translate-y-1/2" />
                     <div className="relative px-8 py-10 flex flex-col md:flex-row justify-between items-center space-y-6 md:space-y-0 z-10">
                         <div className="text-center md:text-left">
@@ -418,14 +479,14 @@ export default function Dashboard() {
 
                 {/* Add Book CTA */}
                 <div className="flex justify-end">
-                    <Link href="/books/add" className="flex items-center space-x-2 px-5 py-2.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors shadow-lg shadow-orange-500/20 font-medium">
+                    <Link href="/books/add" className="flex items-center space-x-2 px-5 py-2.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors shadow-lg shadow-orange-500/20 font-medium" data-tour="add-book">
                         <Plus className="h-5 w-5" />
                         <span>Add New Book</span>
                     </Link>
                 </div>
 
                 {/* Tabs Header */}
-                <div className="flex space-x-1 bg-white p-1.5 rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+                <div className="flex space-x-1 bg-white p-1.5 rounded-xl border border-gray-200 shadow-sm overflow-x-auto" data-tour="tabs">
                     {tabs.map((tab) => {
                         const Icon = tab.icon;
                         return (
@@ -436,6 +497,7 @@ export default function Dashboard() {
                                     ? 'bg-orange-50 text-orange-700 ring-1 ring-orange-200 shadow-sm'
                                     : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
                                     }`}
+                                data-tour={`tab-${tab.id}`}
                             >
                                 <Icon className="h-4 w-4" />
                                 <span className="whitespace-nowrap">{tab.label}</span>
@@ -505,13 +567,13 @@ export default function Dashboard() {
 
                                                     <div className="flex flex-wrap gap-2">
                                                         {book.isForRent && (
-                                                            <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-50 text-blue-700 rounded-md border border-blue-100 uppercase tracking-wide">
-                                                                Rent
+                                                            <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-50 text-blue-700 rounded-md border border-blue-100 uppercase tracking-wide flex items-center">
+                                                                Rent <Star className="h-2.5 w-2.5 ml-1 mr-0.5 fill-blue-400 text-blue-500" /> {book.creditsRequired || 0}
                                                             </span>
                                                         )}
                                                         {book.isForSale && (
-                                                            <span className="px-2 py-0.5 text-[10px] font-bold bg-green-50 text-green-700 rounded-md border border-green-100 uppercase tracking-wide">
-                                                                Buy
+                                                            <span className="px-2 py-0.5 text-[10px] font-bold bg-green-50 text-green-700 rounded-md border border-green-100 uppercase tracking-wide flex items-center">
+                                                                Buy <Star className="h-2.5 w-2.5 ml-1 mr-0.5 fill-green-400 text-green-500" /> {book.creditsRequired || 0}
                                                             </span>
                                                         )}
                                                         {book.isForExchange && (
@@ -727,11 +789,15 @@ export default function Dashboard() {
                                                     <div>
                                                         <h4 className="font-bold text-gray-900 line-clamp-1">{req.book.title}</h4>
                                                         <p className="text-xs text-gray-500 mt-0.5">From: <span className="font-medium text-gray-700">{req.requester.name}</span></p>
+                                                        {req.type === 'rent' && <p className="text-[10px] text-blue-600 font-semibold uppercase mt-1">Rental</p>}
                                                     </div>
                                                     <span className={`px-2.5 py-1 text-[10px] uppercase font-bold rounded-full border
                                                         ${req.status === 'pending' ? 'bg-yellow-50 text-yellow-700 border-yellow-100' :
-                                                            req.status === 'approved' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
-                                                        {req.status}
+                                                            req.status === 'approved' || req.status === 'returned' ? 'bg-green-50 text-green-700 border-green-100' :
+                                                            req.status === 'rejected' || req.status === 'cancelled' ? 'bg-red-50 text-red-700 border-red-100' :
+                                                            req.status.startsWith('return') ? 'bg-orange-50 text-orange-700 border-orange-100' :
+                                                            'bg-blue-50 text-blue-700 border-blue-100'}`}>
+                                                        {req.status.replace(/_/g, ' ')}
                                                     </span>
                                                 </div>
 
@@ -749,6 +815,32 @@ export default function Dashboard() {
                                                         >
                                                             <XCircle className="h-3.5 w-3.5" /> <span>Reject</span>
                                                         </button>
+                                                    </div>
+                                                )}
+
+                                                {/* Owner confirms receipt of returned book */}
+                                                {req.status === 'return_dispatched' && (
+                                                    <div className="flex space-x-3 pt-2">
+                                                        <button
+                                                            onClick={() => {
+                                                                if (confirm('Have you received the returned book?')) {
+                                                                    handleRequestAction(req.id, 'returned');
+                                                                }
+                                                            }}
+                                                            className="flex-1 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg flex justify-center items-center space-x-1.5 transition-colors shadow-sm"
+                                                        >
+                                                            <CheckCircle className="h-3.5 w-3.5" /> <span>Confirm Return Received</span>
+                                                        </button>
+                                                    </div>
+                                                )}
+
+                                                {/* Return progress indicator for owner */}
+                                                {(req.status === 'return_pending' || req.status === 'return_collected') && (
+                                                    <div className="pt-2">
+                                                        <p className="text-xs text-orange-600 font-medium flex items-center gap-1">
+                                                            <Truck className="h-3.5 w-3.5" />
+                                                            {req.status === 'return_pending' ? 'Return initiated — awaiting collection from renter' : 'Book collected — being dispatched to you'}
+                                                        </p>
                                                     </div>
                                                 )}
                                             </div>
@@ -777,7 +869,7 @@ export default function Dashboard() {
                                                     {req.status === 'approved' && <CheckCircle className="h-5 w-5 text-green-500" />}
                                                     {req.status === 'rejected' && <XCircle className="h-5 w-5 text-red-500" />}
 
-                                                    {req.type === 'rent' && req.status !== 'completed' && req.status !== 'rejected' && req.status !== 'pending' && req.status !== 'return_pending' && req.status !== 'returned' && (
+                                                    {req.type === 'rent' && req.status === 'delivered' && (
                                                         <>
                                                             <button
                                                                 onClick={() => handleExtendRental(req.id)}
@@ -797,7 +889,11 @@ export default function Dashboard() {
                                                             </button>
                                                         </>
                                                     )}
+                                                    {/* Return flow status badges for renter */}
                                                     {req.status === 'return_pending' && <span className="text-xs text-orange-600 font-bold px-2 py-0.5 bg-orange-50 rounded-full border border-orange-100">Return Requested</span>}
+                                                    {req.status === 'return_collected' && <span className="text-xs text-blue-600 font-bold px-2 py-0.5 bg-blue-50 rounded-full border border-blue-100">Collected</span>}
+                                                    {req.status === 'return_dispatched' && <span className="text-xs text-purple-600 font-bold px-2 py-0.5 bg-purple-50 rounded-full border border-purple-100">Dispatched to Owner</span>}
+                                                    {req.status === 'returned' && <span className="text-xs text-green-600 font-bold px-2 py-0.5 bg-green-50 rounded-full border border-green-100">Returned ✓</span>}
                                                 </div>
                                             </div>
                                         ))
@@ -830,24 +926,22 @@ export default function Dashboard() {
                                                         ${req.status === 'return_pending' ? 'bg-orange-50 text-orange-700 border-orange-100' :
                                                                 req.status === 'return_collected' ? 'bg-blue-50 text-blue-700 border-blue-100' :
                                                                     'bg-purple-50 text-purple-700 border-purple-100'}`}>
-                                                            {req.status.replace('_', ' ')}
+                                                            {req.status.replace(/_/g, ' ')}
                                                         </span>
                                                     </div>
                                                     <div className="flex space-x-3 w-full md:w-auto">
                                                         {req.status === 'return_pending' && (
                                                             <button onClick={() => updateStatus(req.id, 'return_collected')} className="flex-1 md:flex-none px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-lg shadow-sm transition-colors">
-                                                                Confirm Collection
+                                                                Collect from Renter
                                                             </button>
                                                         )}
                                                         {req.status === 'return_collected' && (
                                                             <button onClick={() => updateStatus(req.id, 'return_dispatched')} className="flex-1 md:flex-none px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium text-sm rounded-lg shadow-sm transition-colors">
-                                                                Mark Dispatched
+                                                                Dispatch to Owner
                                                             </button>
                                                         )}
                                                         {req.status === 'return_dispatched' && (
-                                                            <button onClick={() => updateStatus(req.id, 'returned')} className="flex-1 md:flex-none px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium text-sm rounded-lg shadow-sm transition-colors">
-                                                                Verify Return
-                                                            </button>
+                                                            <span className="text-orange-600 text-sm font-bold flex items-center"><Clock className="w-4 h-4 mr-1.5" /> Awaiting Owner Confirmation</span>
                                                         )}
                                                     </div>
                                                 </div>
@@ -859,10 +953,22 @@ export default function Dashboard() {
                         </div>
                     )}
 
+                    {activeTab === 'wallet' && (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <CreditsLedgerTab
+                                user={user}
+                                onUserUpdate={(updatedUser) => {
+                                    setUser(updatedUser);
+                                    localStorage.setItem('user', JSON.stringify(updatedUser));
+                                }}
+                            />
+                        </div>
+                    )}
+
                     {/* 5. Logistics (Local Admin) */}
                     {activeTab === 'logistics' && user.role === 'local_admin' && (
                         <div className="space-y-6">
-                            <h2 className="text-2xl font-bold text-gray-900 font-serif">Active Exchanges in {user.zipCode}</h2>
+                            <h2 className="text-2xl font-bold text-gray-900 font-serif">Active Exchanges in {user.locality?.name || user.zipCode}</h2>
                             {logisticsRequests.length === 0 ? (
                                 <div className="bg-white p-12 text-center text-gray-500 rounded-2xl border border-gray-100 shadow-sm">
                                     No active exchanges in your area.
@@ -933,8 +1039,34 @@ export default function Dashboard() {
                                                                     Mark Delivered
                                                                 </button>
                                                             )}
-                                                            {req.status === 'delivered' && (
+                                                            {req.status === 'delivered' && req.type !== 'rent' && (
                                                                 <span className="text-green-600 text-xs font-bold flex items-center"><CheckCircle className="w-3.5 h-3.5 mr-1" /> Completed</span>
+                                                            )}
+                                                            {req.status === 'delivered' && req.type === 'rent' && (
+                                                                <span className="text-blue-600 text-xs font-bold flex items-center"><Clock className="w-3.5 h-3.5 mr-1" /> Rented Out</span>
+                                                            )}
+                                                            {/* Return Flow Actions */}
+                                                            {req.status === 'return_pending' && (
+                                                                <button
+                                                                    onClick={() => handleLogisticsUpdate(req.id, 'return_collected')}
+                                                                    className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs font-semibold rounded shadow-sm transition-colors"
+                                                                >
+                                                                    Collect from Renter
+                                                                </button>
+                                                            )}
+                                                            {req.status === 'return_collected' && (
+                                                                <button
+                                                                    onClick={() => handleLogisticsUpdate(req.id, 'return_dispatched')}
+                                                                    className="px-3 py-1 bg-purple-500 hover:bg-purple-600 text-white text-xs font-semibold rounded shadow-sm transition-colors"
+                                                                >
+                                                                    Dispatch to Owner
+                                                                </button>
+                                                            )}
+                                                            {req.status === 'return_dispatched' && (
+                                                                <span className="text-orange-600 text-xs font-bold flex items-center"><Clock className="w-3.5 h-3.5 mr-1" /> Awaiting Owner</span>
+                                                            )}
+                                                            {req.status === 'returned' && (
+                                                                <span className="text-green-600 text-xs font-bold flex items-center"><CheckCircle className="w-3.5 h-3.5 mr-1" /> Returned</span>
                                                             )}
                                                         </td>
                                                     </tr>
@@ -977,6 +1109,9 @@ export default function Dashboard() {
                                     </div>
                                 )}
                             </div>
+
+                            {/* Section: Withdrawals Management */}
+                            <AdminWithdrawals />
 
                             {/* Section: Locality Settings */}
                             <div className="space-y-4">
@@ -1218,14 +1353,17 @@ export default function Dashboard() {
                                         </label>
                                         {relistData.isForSale && (
                                             <div className="mt-3 pl-7">
-                                                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Asking Price (₹)</label>
-                                                <input
-                                                    type="number"
-                                                    value={relistData.askingPrice}
-                                                    onChange={e => setRelistData({ ...relistData, askingPrice: e.target.value })}
-                                                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-900 focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500"
-                                                    placeholder="0.00"
-                                                />
+                                                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Credits Required</label>
+                                                <div className="relative">
+                                                    <input
+                                                        type="number"
+                                                        value={relistData.creditsRequired}
+                                                        onChange={e => setRelistData({ ...relistData, creditsRequired: e.target.value })}
+                                                        className="w-full px-3 pr-16 py-2 border border-gray-200 rounded-lg text-sm text-gray-900 focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500"
+                                                        placeholder="0"
+                                                    />
+                                                    <span className="absolute right-3 top-2.5 text-orange-600 font-bold text-xs uppercase pt-0.5">Credits</span>
+                                                </div>
                                             </div>
                                         )}
                                     </div>
@@ -1250,14 +1388,17 @@ export default function Dashboard() {
                                         {relistData.isForRent && (
                                             <div className="mt-3 pl-7 space-y-3">
                                                 <div>
-                                                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Rent Price (₹)</label>
-                                                    <input
-                                                        type="number"
-                                                        value={relistData.rentPrice}
-                                                        onChange={e => setRelistData({ ...relistData, rentPrice: e.target.value })}
-                                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-900 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                                                        placeholder="0.00"
-                                                    />
+                                                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Credits Required</label>
+                                                    <div className="relative">
+                                                        <input
+                                                            type="number"
+                                                            value={relistData.creditsRequired}
+                                                            onChange={e => setRelistData({ ...relistData, creditsRequired: e.target.value })}
+                                                            className="w-full px-3 pr-16 py-2 border border-gray-200 rounded-lg text-sm text-gray-900 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                                            placeholder="0"
+                                                        />
+                                                        <span className="absolute right-3 top-2.5 text-orange-600 font-bold text-xs uppercase pt-0.5">Credits</span>
+                                                    </div>
                                                 </div>
                                                 <div>
                                                     <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Duration (Days)</label>
@@ -1292,6 +1433,24 @@ export default function Dashboard() {
                     </div>
                 )}
             </main>
+
+            <BuyCreditsModal
+                isOpen={buyCreditsOpen}
+                onClose={() => setBuyCreditsOpen(false)}
+                onSuccess={(credits) => {
+                    const updatedUser = { ...user, credits: credits };
+                    setUser(updatedUser);
+                    localStorage.setItem('user', JSON.stringify(updatedUser));
+                }}
+            />
+
+            {/* Application Tour */}
+            {showTour && user && (
+                <AppTour
+                    userRole={user.role}
+                    onTabChange={handleTourTabChange}
+                />
+            )}
         </div>
     );
 }

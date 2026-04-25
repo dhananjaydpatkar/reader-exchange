@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import api from '@/lib/api';
-import { ArrowLeft, Book as BookIcon, Calendar, IndianRupee, Clock, CheckCircle, MapPin } from 'lucide-react';
+import { ArrowLeft, Book as BookIcon, Calendar, IndianRupee, Clock, CheckCircle, MapPin, Star } from 'lucide-react';
 import Link from 'next/link';
 
 export default function BookDetailsPage() {
@@ -177,7 +177,7 @@ export default function BookDetailsPage() {
                                             </div>
                                             <h3 className="font-bold text-gray-900">Rent</h3>
                                             <div className="mt-1 flex items-baseline space-x-2">
-                                                <p className="text-sm font-bold text-gray-900">₹{book.rentPrice}</p>
+                                                <p className="text-sm flex items-center font-bold text-gray-900"><Star className="h-3 w-3 mr-1 fill-yellow-400 text-yellow-500" /> {book.creditsRequired}</p>
                                                 <p className="text-xs text-gray-500">for {book.rentDuration} Days</p>
                                             </div>
                                         </button>
@@ -191,10 +191,10 @@ export default function BookDetailsPage() {
                                             disabled={actionLoading}
                                         >
                                             <div className="text-orange-500 mb-3 group-hover:scale-110 transition-transform origin-left bg-orange-50 w-fit p-2 rounded-lg">
-                                                <IndianRupee className="h-5 w-5" />
+                                                <Star className="h-5 w-5 fill-orange-400" />
                                             </div>
                                             <h3 className="font-bold text-gray-900">Buy</h3>
-                                            <p className="text-sm font-bold text-gray-900 mt-1">₹{book.askingPrice}</p>
+                                            <p className="text-sm flex items-center font-bold text-gray-900 mt-1"><Star className="h-3 w-3 mr-1 fill-yellow-400 text-yellow-500" /> {book.creditsRequired}</p>
                                         </button>
                                     )}
                                 </>
@@ -217,17 +217,17 @@ export default function BookDetailsPage() {
                                             <div key={index} className="relative flex items-start gap-4 pl-10">
                                                 {/* Timeline dot */}
                                                 <div className={`absolute left-2.5 top-1.5 w-3 h-3 rounded-full border-2 border-white shadow-sm ${entry.transactionType === 'sale' ? 'bg-green-500' :
-                                                        entry.transactionType === 'exchange' ? 'bg-orange-500' :
-                                                            'bg-gray-400'
+                                                    entry.transactionType === 'exchange' ? 'bg-orange-500' :
+                                                        'bg-gray-400'
                                                     }`} />
 
                                                 <div className="flex-1 bg-gray-50 rounded-xl p-4 border border-gray-100 hover:border-orange-100 transition-colors">
                                                     <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
                                                         <span className={`px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-full border ${entry.transactionType === 'sale'
-                                                                ? 'bg-green-50 text-green-700 border-green-100'
-                                                                : entry.transactionType === 'exchange'
-                                                                    ? 'bg-orange-50 text-orange-700 border-orange-100'
-                                                                    : 'bg-gray-50 text-gray-600 border-gray-200'
+                                                            ? 'bg-green-50 text-green-700 border-green-100'
+                                                            : entry.transactionType === 'exchange'
+                                                                ? 'bg-orange-50 text-orange-700 border-orange-100'
+                                                                : 'bg-gray-50 text-gray-600 border-gray-200'
                                                             }`}>
                                                             {entry.transactionType === 'sale' ? '💰 Sale' : entry.transactionType === 'exchange' ? '🤝 Give Away' : 'Initial'}
                                                         </span>
@@ -242,8 +242,8 @@ export default function BookDetailsPage() {
                                                     </div>
                                                     {entry.price !== undefined && entry.price !== null && (
                                                         <div className="mt-1.5 text-xs text-gray-500 flex items-center gap-1">
-                                                            <IndianRupee className="h-3 w-3" />
-                                                            {entry.price === 0 ? 'Free' : `${entry.price}`}
+                                                            <Star className="h-3 w-3 fill-yellow-400 text-yellow-500" />
+                                                            {entry.price === 0 ? 'Free' : `${entry.price} Credits`}
                                                         </div>
                                                     )}
                                                 </div>

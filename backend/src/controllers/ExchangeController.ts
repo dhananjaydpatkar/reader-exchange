@@ -2,8 +2,9 @@ import type { Request, Response } from 'express';
 import { AppDataSource } from '../data-source.js';
 import { ExchangeRequest, RequestStatus, RequestType } from '../entities/ExchangeRequest.js';
 import { Book, BookStatus } from '../entities/Book.js';
-import { User } from '../entities/User.js';
+import { User, UserRole } from '../entities/User.js';
 import { validationResult } from 'express-validator';
+import { LedgerTransaction, TransactionType, TransactionStatus } from '../entities/LedgerTransaction.js';
 
 const requestRepository = AppDataSource.getRepository(ExchangeRequest);
 const bookRepository = AppDataSource.getRepository(Book);
@@ -106,25 +107,54 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
 
         const requestData: any = {
             book,
-            requester: { id: userId } as User,
+            requester: requester,
             originalOwner: book.owner,
             status: RequestStatus.PENDING,
             type: normalizedType,
         };
 
-        if (normalizedType === RequestType.RENT) {
-            requestData.totalAmount = book.rentPrice;
-            requestData.rentStartDate = new Date();
-        } else if (normalizedType === RequestType.BUY) {
-            requestData.totalAmount = book.askingPrice;
+        if (normalizedType === RequestType.RENT || normalizedType === RequestType.BUY) {
+            requestData.totalAmount = book.creditsRequired;
+            if (normalizedType === RequestType.RENT) {
+                requestData.rentStartDate = new Date();
+            }
+        }
+
+        if ((normalizedType === RequestType.BUY || normalizedType === RequestType.RENT) && book.creditsRequired > 0) {
+            if (requester.credits < book.creditsRequired) {
+                res.status(400).json({ message: 'Insufficient credits to request this book.' });
+                return;
+            }
+
+            requester.credits -= book.creditsRequired;
+
+            await AppDataSource.transaction(async (manager) => {
+                await manager.save(requester);
+
+                const request = manager.create(ExchangeRequest, requestData);
+                const savedRequest = await manager.save(request);
+
+                const ledger = manager.create(LedgerTransaction, {
+                    user: requester,
+                    amount: -book.creditsRequired,
+                    type: TransactionType.EXCHANGE_HOLD,
+                    status: TransactionStatus.PENDING,
+                    referenceId: savedRequest.id,
+                    balanceSnapshot: requester.credits
+                } as any);
+                await manager.save(ledger);
+
+                book.status = BookStatus.PENDING;
+                await manager.save(book);
+
+                res.status(201).json(savedRequest);
+            });
+            return;
         }
 
         const request = requestRepository.create(requestData);
-
         await requestRepository.save(request);
 
-        // Lock book for ANY request type (First come first serve)
-        // Set book status to PENDING
         book.status = BookStatus.PENDING;
         await bookRepository.save(book);
 
@@ -176,7 +206,7 @@ export const updateRequestStatus = async (req: Request, res: Response): Promise<
     try {
         const request = await requestRepository.findOne({
             where: { id: requestId as string },
-            relations: ['book', 'book.owner', 'requester'],
+            relations: ['book', 'book.owner', 'requester', 'originalOwner'],
         });
 
         if (!request) {
@@ -188,23 +218,18 @@ export const updateRequestStatus = async (req: Request, res: Response): Promise<
 
         // Verify permissions
         const isOwner = request.book.owner.id === userId;
+        const isOriginalOwner = request.originalOwner?.id === userId;
         const isLocalAdmin = user?.role === 'local_admin' && user?.zipCode === request.book.owner.zipCode;
         const isRenter = request.requester.id === userId;
 
-        // Owner can approve/reject
-        // Renter can cancel or return
+        // Owner can approve/reject and confirm return receipt
+        // Renter can cancel or initiate return
+        // Original Owner can confirm return receipt (returned status)
         // Local Admin can handle logistics (collected, dispatched, delivered, etc.)
 
-        // Simplified check for now (refine as needed)
-        if (!isOwner && !isLocalAdmin && !isRenter) {
+        if (!isOwner && !isOriginalOwner && !isLocalAdmin && !isRenter) {
             res.status(403).json({ message: 'Not authorized' });
             return;
-        }
-
-        if (request.status !== RequestStatus.PENDING && !isLocalAdmin && !isRenter) {
-            // Owner can only act on PENDING (approve/reject)
-            // But if status is RETURN_PENDING etc, owner might need to act? 
-            // Actually currently owner doesn't do logistics. 
         }
 
         request.status = normalizedStatus;
@@ -218,25 +243,42 @@ export const updateRequestStatus = async (req: Request, res: Response): Promise<
 
         // Unlock book if request is REJECTED or CANCELLED
         if (normalizedStatus === RequestStatus.REJECTED || normalizedStatus === RequestStatus.CANCELLED) {
-            if (request.book.status === BookStatus.PENDING) {
-                request.book.status = BookStatus.AVAILABLE;
-                await bookRepository.save(request.book);
-            }
+            await AppDataSource.transaction(async (manager) => {
+                if (request.book.status === BookStatus.PENDING) {
+                    request.book.status = BookStatus.AVAILABLE;
+                    await manager.save(request.book);
+                }
+
+                const ledgerRepo = manager.getRepository(LedgerTransaction);
+                const holdTransaction = await ledgerRepo.findOne({
+                    where: { referenceId: request.id, type: TransactionType.EXCHANGE_HOLD }
+                });
+
+                if (holdTransaction && holdTransaction.status === TransactionStatus.PENDING) {
+                    holdTransaction.status = TransactionStatus.CANCELLED;
+                    await manager.save(holdTransaction);
+
+                    // Re-fetch buyer within transaction for fresh credits
+                    const buyer = await manager.getRepository(User).findOneBy({ id: request.requester.id });
+                    if (buyer) {
+                        buyer.credits += Math.abs(holdTransaction.amount);
+                        await manager.save(buyer);
+
+                        const refundTx = ledgerRepo.create({
+                            user: buyer,
+                            amount: Math.abs(holdTransaction.amount),
+                            type: TransactionType.EXCHANGE_REFUND,
+                            status: TransactionStatus.COMPLETED,
+                            referenceId: request.id,
+                            balanceSnapshot: buyer.credits
+                        } as any);
+                        await manager.save(refundTx);
+                    }
+                }
+            });
         }
 
-        // Handle Return Flow
-        if (normalizedStatus === RequestStatus.RETURN_PENDING) {
-            // Only Renter can initiate return?
-            // Ideally check req.user.id === request.requester.id
-        }
-
-        if (normalizedStatus === RequestStatus.RETURNED) {
-            request.book.status = BookStatus.AVAILABLE;
-            await bookRepository.save(request.book);
-            // request.rentEndDate = new Date(); // Actual return date?
-        }
-
-        // Existing Logistics override
+        // Initial collection for rent: set rental dates
         if (normalizedStatus === RequestStatus.COLLECTED && request.type === RequestType.RENT) {
             request.rentStartDate = new Date();
             const duration = request.book.rentDuration || 14;
@@ -245,76 +287,203 @@ export const updateRequestStatus = async (req: Request, res: Response): Promise<
             request.rentEndDate = endDate;
         }
 
-        // Update timestamps for return logistics
-        if (normalizedStatus === RequestStatus.RETURN_COLLECTED) request.collectedAt = new Date(); // Reusing collectedAt? Or need returnCollectedAt? 
-        // Let's reuse or just rely on status history if we had it. For now, just status update is fine for MVP.
+        // Handle Return Flow
+        if (normalizedStatus === RequestStatus.RETURN_PENDING) {
+            // Book remains EXCHANGED (rented out) during return process
+            // No book status change needed here — just status transition
+        }
+
+        if (normalizedStatus === RequestStatus.RETURN_COLLECTED) {
+            // Local admin has collected the book from the renter
+            request.collectedAt = new Date();
+        }
+
+        if (normalizedStatus === RequestStatus.RETURN_DISPATCHED) {
+            // Local admin has dispatched the book back to the original owner
+            request.dispatchedAt = new Date();
+        }
+
+        if (normalizedStatus === RequestStatus.RETURNED) {
+            // Owner has confirmed receipt of the returned book
+            // Transfer ownership back to original owner and mark as SOLD (needs relist)
+            request.book.owner = request.originalOwner;
+            request.book.status = BookStatus.AVAILABLE;
+            request.book.isForSale = false;
+            request.book.isForRent = false;
+            request.book.isForExchange = false;
+            request.rentEndDate = new Date(); // Actual return date
+            await bookRepository.save(request.book);
+        }
 
         if (normalizedStatus === RequestStatus.DELIVERED) {
-            // Logic for delivery completion
-            if (request.type === RequestType.BUY) {
-                // Transfer ownership and add to history
-                const previousOwner = request.book.owner;
-
-                // Initialize ownership history if not exists
-                if (!request.book.ownershipHistory) {
-                    request.book.ownershipHistory = [];
-                }
-
-                // Add previous owner to history
-                request.book.ownershipHistory.push({
-                    userId: previousOwner.id,
-                    userName: previousOwner.name,
-                    toUserId: request.requester.id,
-                    toUserName: request.requester.name,
-                    timestamp: new Date(),
-                    transactionType: 'sale',
-                    price: request.totalAmount ? Number(request.totalAmount) : (request.book.askingPrice ? Number(request.book.askingPrice) : 0),
-                    requestId: request.id
+            // Wrap entire delivery completion in a single DB transaction
+            // so credit reconciliation + ownership transfer is atomic (all-or-nothing)
+            await AppDataSource.transaction(async (manager) => {
+                const ledgerRepo = manager.getRepository(LedgerTransaction);
+                const userRepo = manager.getRepository(User);
+                const holdTransaction = await ledgerRepo.findOne({
+                    where: { referenceId: request.id, type: TransactionType.EXCHANGE_HOLD }
                 });
 
-                // Transfer ownership to buyer
-                request.book.owner = request.requester;
-                request.book.status = BookStatus.SOLD;
-                // Reset listing preferences
-                request.book.isForSale = false;
-                request.book.isForRent = false;
-                request.book.isForExchange = false;
-                request.book.askingPrice = null as any;
-                request.book.rentPrice = null as any;
+                if (holdTransaction) {
+                    // Check if an EARN entry already exists (recovery from a previous partial failure)
+                    const existingEarn = await ledgerRepo.findOne({
+                        where: { referenceId: request.id, type: TransactionType.EXCHANGE_EARN }
+                    });
 
-            } else if (request.type === RequestType.EXCHANGE) {
-                // Initialize ownership history if not exists
-                if (!request.book.ownershipHistory) {
-                    request.book.ownershipHistory = [];
+                    if (!existingEarn) {
+                        // Mark hold as completed
+                        holdTransaction.status = TransactionStatus.COMPLETED;
+                        await manager.save(holdTransaction);
+
+                        // Re-fetch the originalOwner from DB within this transaction to get fresh credits
+                        const seller = await userRepo.findOneBy({ id: request.originalOwner.id });
+                        if (seller) {
+                            seller.credits += Math.abs(holdTransaction.amount);
+                            await manager.save(seller);
+
+                            const earnTx = ledgerRepo.create({
+                                user: seller,
+                                amount: Math.abs(holdTransaction.amount),
+                                type: TransactionType.EXCHANGE_EARN,
+                                status: TransactionStatus.COMPLETED,
+                                referenceId: request.id,
+                                balanceSnapshot: seller.credits
+                            } as any);
+                            await manager.save(earnTx);
+                        }
+                    }
                 }
 
-                // Add previous owner to history
-                const previousOwner = request.book.owner;
-                request.book.ownershipHistory.push({
-                    userId: previousOwner.id,
-                    userName: previousOwner.name,
-                    toUserId: request.requester.id,
-                    toUserName: request.requester.name,
-                    timestamp: new Date(),
-                    transactionType: 'exchange',
-                    price: 0,
-                    requestId: request.id
-                });
+                // --- Platform Fee: 5 credits from buyer + 5 credits from seller → local_admin ---
+                const PLATFORM_FEE = 5;
+                if (request.type === RequestType.BUY || request.type === RequestType.RENT) {
+                    // Check if platform fee already processed (idempotency guard)
+                    const existingFee = await ledgerRepo.findOne({
+                        where: { referenceId: request.id, type: TransactionType.PLATFORM_FEE, user: { id: request.requester.id } }
+                    });
 
-                // Transfer ownership to requester
-                request.book.owner = request.requester;
-                request.book.status = BookStatus.SOLD; // Treat Give Away as Sold (0 price)
-                // Reset listing preferences
-                request.book.isForSale = false;
-                request.book.isForRent = false;
-                request.book.isForExchange = false;
-                request.book.askingPrice = null as any;
-                request.book.rentPrice = null as any;
+                    if (!existingFee) {
+                        // Find the local_admin for the book owner's zipCode
+                        const localAdmin = await userRepo.findOneBy({
+                            role: UserRole.LOCAL_ADMIN,
+                            zipCode: request.book.owner.zipCode || request.originalOwner.zipCode
+                        });
 
-            } else if (request.type === RequestType.RENT) {
-                request.book.status = BookStatus.EXCHANGED; // Temporarily unavailable
-            }
-            await bookRepository.save(request.book);
+                        // Re-fetch buyer and seller with fresh credits
+                        const buyer = await userRepo.findOneBy({ id: request.requester.id });
+                        const seller = await userRepo.findOneBy({ id: request.originalOwner.id });
+
+                        if (buyer && seller && localAdmin) {
+                            // Deduct 5 from buyer
+                            buyer.credits -= PLATFORM_FEE;
+                            await manager.save(buyer);
+                            const buyerFeeTx = ledgerRepo.create({
+                                user: buyer,
+                                amount: -PLATFORM_FEE,
+                                type: TransactionType.PLATFORM_FEE,
+                                status: TransactionStatus.COMPLETED,
+                                referenceId: request.id,
+                                balanceSnapshot: buyer.credits
+                            } as any);
+                            await manager.save(buyerFeeTx);
+
+                            // Deduct 5 from seller
+                            seller.credits -= PLATFORM_FEE;
+                            await manager.save(seller);
+                            const sellerFeeTx = ledgerRepo.create({
+                                user: seller,
+                                amount: -PLATFORM_FEE,
+                                type: TransactionType.PLATFORM_FEE,
+                                status: TransactionStatus.COMPLETED,
+                                referenceId: request.id,
+                                balanceSnapshot: seller.credits
+                            } as any);
+                            await manager.save(sellerFeeTx);
+
+                            // Credit 10 (5+5) to local_admin
+                            localAdmin.credits += PLATFORM_FEE * 2;
+                            await manager.save(localAdmin);
+                            const adminFeeTx = ledgerRepo.create({
+                                user: localAdmin,
+                                amount: PLATFORM_FEE * 2,
+                                type: TransactionType.PLATFORM_FEE,
+                                status: TransactionStatus.COMPLETED,
+                                referenceId: request.id,
+                                balanceSnapshot: localAdmin.credits
+                            } as any);
+                            await manager.save(adminFeeTx);
+                        }
+                    }
+                }
+                // --- End Platform Fee ---
+
+                // Logic for delivery completion
+                if (request.type === RequestType.BUY) {
+                    // Transfer ownership and add to history
+                    const previousOwner = request.book.owner;
+
+                    // Initialize ownership history if not exists
+                    if (!request.book.ownershipHistory) {
+                        request.book.ownershipHistory = [];
+                    }
+
+                    // Add previous owner to history
+                    request.book.ownershipHistory.push({
+                        userId: previousOwner.id,
+                        userName: previousOwner.name,
+                        toUserId: request.requester.id,
+                        toUserName: request.requester.name,
+                        timestamp: new Date(),
+                        transactionType: 'sale',
+                        price: request.totalAmount ? Number(request.totalAmount) : (request.book.askingPrice ? Number(request.book.askingPrice) : 0),
+                        requestId: request.id
+                    });
+
+                    // Transfer ownership to buyer
+                    request.book.owner = request.requester;
+                    request.book.status = BookStatus.SOLD;
+                    // Reset listing preferences
+                    request.book.isForSale = false;
+                    request.book.isForRent = false;
+                    request.book.isForExchange = false;
+                    request.book.askingPrice = null as any;
+                    request.book.rentPrice = null as any;
+
+                } else if (request.type === RequestType.EXCHANGE) {
+                    // Initialize ownership history if not exists
+                    if (!request.book.ownershipHistory) {
+                        request.book.ownershipHistory = [];
+                    }
+
+                    // Add previous owner to history
+                    const previousOwner = request.book.owner;
+                    request.book.ownershipHistory.push({
+                        userId: previousOwner.id,
+                        userName: previousOwner.name,
+                        toUserId: request.requester.id,
+                        toUserName: request.requester.name,
+                        timestamp: new Date(),
+                        transactionType: 'exchange',
+                        price: 0,
+                        requestId: request.id
+                    });
+
+                    // Transfer ownership to requester
+                    request.book.owner = request.requester;
+                    request.book.status = BookStatus.SOLD; // Treat Give Away as Sold (0 price)
+                    // Reset listing preferences
+                    request.book.isForSale = false;
+                    request.book.isForRent = false;
+                    request.book.isForExchange = false;
+                    request.book.askingPrice = null as any;
+                    request.book.rentPrice = null as any;
+
+                } else if (request.type === RequestType.RENT) {
+                    request.book.status = BookStatus.EXCHANGED; // Temporarily unavailable
+                }
+                await manager.save(request.book);
+            });
         }
 
 

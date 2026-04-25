@@ -6,7 +6,10 @@ import {
     getLocalAdminRequests,
     updateExchangeStatus,
     getLocalExchanges,
-    getAllExchanges
+    getAllExchanges,
+    getWithdrawalRequests,
+    approveWithdrawal,
+    rejectWithdrawal
 } from '../controllers/AdminController.js';
 
 const router = Router();
@@ -19,5 +22,9 @@ router.get('/requests', authenticateUser, getLocalAdminRequests);
 router.get('/local-exchanges', authenticateUser, getLocalExchanges);
 router.get('/all-exchanges', authenticateUser, getAllExchanges);
 router.put('/exchange/:requestId/status', authenticateUser, updateExchangeStatus);
+
+router.get('/withdrawals', authenticateUser, getWithdrawalRequests);
+router.post('/withdrawals/:id/approve', authenticateUser, approveWithdrawal);
+router.post('/withdrawals/:id/reject', authenticateUser, rejectWithdrawal);
 
 export default router;

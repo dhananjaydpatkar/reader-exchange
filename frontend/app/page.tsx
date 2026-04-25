@@ -49,7 +49,7 @@ export default function Home() {
             <Link href="/auth/register" className="px-8 py-4 bg-orange-600 hover:bg-orange-700 text-white text-lg font-medium rounded-lg shadow-xl shadow-orange-600/20 transition-all hover:-translate-y-1 flex items-center group">
               Start Exchanging <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
             </Link>
-            <Link href="/books" className="px-8 py-4 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 text-lg font-medium rounded-lg shadow-sm transition-all hover:-translate-y-1">
+            <Link href="/auth/login" className="px-8 py-4 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 text-lg font-medium rounded-lg shadow-sm transition-all hover:-translate-y-1">
               Browse Library
             </Link>
           </div>

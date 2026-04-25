@@ -15,7 +15,7 @@ export const addBook = async (req: Request, res: Response): Promise<void> => {
         return;
     }
 
-    const { isbn, condition, askingPrice, isForExchange, isForSale, isForRent, rentPrice, rentDuration } = req.body;
+    const { isbn, condition, askingPrice, creditsRequired, isForExchange, isForSale, isForRent, rentPrice, rentDuration } = req.body;
     const userId = req.user.id;
 
     // Mutually Exclusive Validation
@@ -48,7 +48,8 @@ export const addBook = async (req: Request, res: Response): Promise<void> => {
             genre: bookDetails.genre || 'General',
             coverImageUrl: bookDetails.coverImageUrl || '',
             condition,
-            askingPrice: isForSale ? askingPrice : null,
+            askingPrice: isForSale ? (askingPrice || creditsRequired || null) : null,
+            creditsRequired: (isForSale || isForRent) ? (creditsRequired || askingPrice || 0) : 0,
             rentPrice: isForRent ? rentPrice : null,
             rentDuration: isForRent ? (rentDuration || 14) : 14,
             isForExchange: isForExchange ?? true,
@@ -168,7 +169,7 @@ export const getBook = async (req: Request, res: Response): Promise<void> => {
 export const relistBook = async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
     const userId = req.user.id;
-    const { isForExchange, isForSale, isForRent, askingPrice, rentPrice, rentDuration } = req.body;
+    const { isForExchange, isForSale, isForRent, askingPrice, creditsRequired, rentPrice, rentDuration } = req.body;
 
     // Mutually Exclusive Validation
     if (isForExchange && (isForSale || isForRent)) {
@@ -204,7 +205,8 @@ export const relistBook = async (req: Request, res: Response): Promise<void> => 
         book.isForExchange = isForExchange ?? false;
         book.isForSale = isForSale ?? false;
         book.isForRent = isForRent ?? false;
-        if (isForSale) book.askingPrice = askingPrice;
+        book.creditsRequired = (isForSale || isForRent) ? (creditsRequired || askingPrice || 0) : 0;
+        if (isForSale) book.askingPrice = askingPrice || creditsRequired || null;
         if (isForRent) {
             book.rentPrice = rentPrice;
             book.rentDuration = rentDuration || 14;

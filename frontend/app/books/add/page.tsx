@@ -14,8 +14,7 @@ export default function AddBookPage() {
         isForExchange: true,
         isForSale: false,
         isForRent: false,
-        askingPrice: '',
-        rentPrice: '',
+        creditsRequired: '',
         rentDuration: '14',
     });
     const [isLoading, setIsLoading] = useState(false);
@@ -59,8 +58,7 @@ export default function AddBookPage() {
         try {
             const payload = {
                 ...formData,
-                askingPrice: formData.isForSale ? parseFloat(formData.askingPrice) : null,
-                rentPrice: formData.isForRent ? parseFloat(formData.rentPrice) : null,
+                creditsRequired: (formData.isForSale || formData.isForRent) ? parseInt(formData.creditsRequired) : 0,
                 rentDuration: formData.isForRent ? parseInt(formData.rentDuration) : 14,
             };
 
@@ -176,17 +174,17 @@ export default function AddBookPage() {
                                 {formData.isForSale && (
                                     <div className="mt-4 pl-8 animate-in fade-in slide-in-from-top-2">
                                         <div className="relative">
-                                            <span className="absolute left-3 top-3 text-gray-500">₹</span>
                                             <input
-                                                name="askingPrice"
+                                                name="creditsRequired"
                                                 type="number"
-                                                step="0.01"
-                                                placeholder="0.00"
-                                                className="input-field pl-8 bg-white text-gray-900"
-                                                value={formData.askingPrice}
+                                                step="1"
+                                                placeholder="e.g. 150"
+                                                className="input-field pr-20 bg-white text-gray-900"
+                                                value={formData.creditsRequired}
                                                 onChange={handleChange}
                                                 required={formData.isForSale}
                                             />
+                                            <span className="absolute right-3 top-3 text-orange-600 font-bold text-xs uppercase">Credits</span>
                                         </div>
                                     </div>
                                 )}
@@ -210,17 +208,17 @@ export default function AddBookPage() {
                                         <div className="space-y-1.5">
                                             <label className="text-xs font-semibold text-gray-500 uppercase">Price (INR)</label>
                                             <div className="relative">
-                                                <span className="absolute left-3 top-3 text-gray-500">₹</span>
                                                 <input
-                                                    name="rentPrice"
+                                                    name="creditsRequired"
                                                     type="number"
-                                                    step="0.01"
-                                                    placeholder="0.00"
-                                                    className="input-field pl-8 bg-white text-gray-900"
-                                                    value={formData.rentPrice}
+                                                    step="1"
+                                                    placeholder="e.g. 50"
+                                                    className="input-field pr-20 bg-white text-gray-900"
+                                                    value={formData.creditsRequired}
                                                     onChange={handleChange}
                                                     required={formData.isForRent}
                                                 />
+                                                <span className="absolute right-3 top-3 text-orange-600 font-bold text-xs uppercase">Credits</span>
                                             </div>
                                         </div>
                                         <div className="space-y-1.5">
