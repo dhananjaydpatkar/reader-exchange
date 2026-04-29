@@ -14,7 +14,10 @@ export default function Home() {
             Reader Exchange
           </span>
         </div>
-        <div className="space-x-4">
+        <div className="space-x-4 flex items-center">
+          <Link href="/guide" className="text-gray-600 hover:text-orange-600 transition-colors font-medium text-sm tracking-wide">
+            How It Works
+          </Link>
           <Link href="/auth/login" className="text-gray-600 hover:text-orange-600 transition-colors font-medium text-sm tracking-wide">
             Sign In
           </Link>
@@ -53,6 +56,9 @@ export default function Home() {
               Browse Library
             </Link>
           </div>
+          <Link href="/guide" className="text-sm text-gray-400 hover:text-orange-600 transition-colors mt-4 underline underline-offset-4 decoration-gray-200 hover:decoration-orange-300">
+            Learn how it works →
+          </Link>
 
         </div>
 

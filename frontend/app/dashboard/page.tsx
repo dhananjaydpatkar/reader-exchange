@@ -377,9 +377,17 @@ export default function Dashboard() {
                     <Link href="/" className="text-xl font-bold text-gray-900 hover:text-orange-600 transition-colors">
                         Reader Exchange
                     </Link>
+                    <Link
+                        href="/dashboard/guide"
+                        className="ml-2 px-3 py-1 rounded-lg hover:bg-orange-50 text-gray-400 hover:text-orange-600 transition-all duration-300 text-xs font-medium font-sans flex items-center space-x-1 group"
+                        title="User Guide"
+                    >
+                        <BookOpen className="h-3.5 w-3.5 group-hover:scale-110 transition-transform" />
+                        <span>Guide</span>
+                    </Link>
                     <button
                         onClick={handleRelaunchTour}
-                        className="ml-2 p-1.5 rounded-lg hover:bg-orange-50 text-gray-400 hover:text-orange-500 transition-all duration-300 group"
+                        className="p-1.5 rounded-lg hover:bg-orange-50 text-gray-400 hover:text-orange-500 transition-all duration-300 group"
                         title="App Guide Tour"
                         data-tour="help-button"
                     >
