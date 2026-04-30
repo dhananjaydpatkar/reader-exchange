@@ -20,7 +20,7 @@ export class User {
     @Column({ unique: true, type: 'text' })
     email!: string;
 
-    @Column({ type: 'text' })
+    @Column({ type: 'text', select: false })
     passwordHash!: string;
 
     @Column({ type: 'text' })
@@ -77,7 +77,7 @@ export class User {
     @Column({ type: 'text', nullable: true })
     securityQuestion!: string;
 
-    @Column({ type: 'text', nullable: true })
+    @Column({ type: 'text', nullable: true, select: false })
     securityAnswerHash!: string;
 
     @OneToMany(() => Book, (book) => book.owner)

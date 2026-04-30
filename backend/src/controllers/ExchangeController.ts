@@ -600,33 +600,60 @@ export const getLogisticsRequests = async (req: Request, res: Response): Promise
     const userId = req.user.id;
 
     try {
-        const user = await userRepository.findOneBy({ id: userId });
+        const user = await userRepository.findOne({
+            where: { id: userId },
+            relations: ['locality']
+        });
         if (!user || user.role !== 'local_admin') {
             res.status(403).json({ message: 'Access denied' });
             return;
         }
 
-        // Fetch requests where book owner is in the same zipCode (Simplified Logistics)
-        // OR requests that need logistics in this area.
-        // For MVP: requests where owner.zipCode == admin.zipCode
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 10;
+        const search = req.query.search as string;
+        const offset = (page - 1) * limit;
 
-        const requests = await requestRepository.find({
-            where: {
-                book: {
-                    owner: {
-                        zipCode: user.zipCode
-                    }
-                },
-                // status: Any active status? PENDING/APPROVED handled by owner. 
-                // Logistics handles COLLECTION_PENDING -> DELIVERED, and RETURN statuses.
-                // But let's return all active ones for visibility.
-            },
-            relations: ['book', 'book.owner', 'requester', 'originalOwner'],
-            order: { updatedAt: 'DESC' }
+        if (!user.locality) {
+            res.json({ data: [], total: 0, page, totalPages: 0 });
+            return;
+        }
+
+        const qb = requestRepository.createQueryBuilder('request')
+            .leftJoinAndSelect('request.book', 'book')
+            .leftJoinAndSelect('book.owner', 'owner')
+            .leftJoinAndSelect('owner.locality', 'ownerLocality')
+            .leftJoinAndSelect('request.requester', 'requester')
+            .leftJoinAndSelect('request.originalOwner', 'originalOwner')
+            .leftJoinAndSelect('originalOwner.locality', 'originalOwnerLocality')
+            .where('(ownerLocality.id = :localityId OR originalOwnerLocality.id = :localityId)', { localityId: user.locality.id });
+
+        if (search) {
+            qb.andWhere(
+                '(owner.name ILIKE :search OR requester.name ILIKE :search OR book.title ILIKE :search OR originalOwner.name ILIKE :search)',
+                { search: `%${search}%` }
+            );
+        }
+
+        // Calculate total BEFORE adding the custom sort/select to avoid TypeORM count alias bug
+        const total = await qb.getCount();
+
+        // Add custom sort and pagination using limit/offset to prevent TypeORM DISTINCT subqueries
+        qb.orderBy(`(CASE WHEN request.status IN ('rejected', 'delivered', 'completed', 'cancelled', 'returned') THEN 1 ELSE 0 END)`, 'ASC')
+          .addOrderBy('request.updatedAt', 'ASC')
+          .offset(offset)
+          .limit(limit);
+
+        const requests = await qb.getMany();
+
+        res.json({
+            data: requests,
+            total,
+            page,
+            totalPages: Math.ceil(total / limit)
         });
-
-        res.json(requests);
-    } catch (error) {
+    } catch (error: any) {
+        require('fs').writeFileSync('/tmp/exchange_error.txt', error.stack || error.message);
         console.error('Get Logistics Error:', error);
         res.status(500).json({ message: 'Server error' });
     }

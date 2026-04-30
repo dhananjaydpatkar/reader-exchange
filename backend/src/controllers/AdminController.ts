@@ -83,21 +83,31 @@ export const getLocalExchanges = async (req: Request, res: Response): Promise<vo
     const userId = req.user.id;
 
     try {
-        const localAdmin = await userRepository.findOneBy({ id: userId });
+        const localAdmin = await userRepository.findOne({
+            where: { id: userId },
+            relations: ['locality']
+        });
         if (!localAdmin || localAdmin.role !== UserRole.LOCAL_ADMIN) {
             res.status(403).json({ message: 'Access denied' });
             return;
         }
 
-        // Find exchanges where the BOOK OWNER is in the local admin's zip code
+        if (!localAdmin.locality) {
+            res.json([]);
+            return;
+        }
+
+        // Find exchanges where the BOOK OWNER or ORIGINAL OWNER is in the local admin's locality
         // Logic: Local Admin manages collection from owners in their area.
         // Complex query needing joins
         const exchanges = await requestRepository.createQueryBuilder('request')
             .leftJoinAndSelect('request.book', 'book')
             .leftJoinAndSelect('book.owner', 'owner')
+            .leftJoinAndSelect('owner.locality', 'ownerLocality')
             .leftJoinAndSelect('request.originalOwner', 'originalOwner')
+            .leftJoinAndSelect('originalOwner.locality', 'originalOwnerLocality')
             .leftJoinAndSelect('request.requester', 'requester')
-            .where('(owner.zipCode = :zipCode OR originalOwner.zipCode = :zipCode)', { zipCode: localAdmin.zipCode })
+            .where('(ownerLocality.id = :localityId OR originalOwnerLocality.id = :localityId)', { localityId: localAdmin.locality.id })
             .andWhere('request.status IN (:...statuses)', {
                 statuses: [
                     RequestStatus.APPROVED,

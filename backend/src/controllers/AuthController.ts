@@ -130,10 +130,12 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
     try {
         console.log(`Login attempt for ${email}`);
-        const user = await userRepository.findOne({
-            where: { email },
-            relations: ['locality']
-        });
+        const user = await userRepository
+            .createQueryBuilder('user')
+            .addSelect('user.passwordHash')
+            .leftJoinAndSelect('user.locality', 'locality')
+            .where('user.email = :email', { email })
+            .getOne();
         console.log(`User found: ${user ? 'yes' : 'no'}`);
         if (!user) {
             res.status(400).json({ message: 'Invalid credentials' });
@@ -178,7 +180,11 @@ export const initForgotPassword = async (req: Request, res: Response): Promise<v
     }
 
     try {
-        const user = await userRepository.findOneBy({ email });
+        const user = await userRepository
+            .createQueryBuilder('user')
+            .addSelect('user.securityAnswerHash')
+            .where('user.email = :email', { email })
+            .getOne();
         if (!user) {
             // Generic message so we don't leak who is registered
             res.status(400).json({ message: 'If an account exists, a security question is required to reset it.', noQuestionSet: true });
@@ -207,7 +213,11 @@ export const verifySecurityAnswer = async (req: Request, res: Response): Promise
     }
 
     try {
-        const user = await userRepository.findOneBy({ email });
+        const user = await userRepository
+            .createQueryBuilder('user')
+            .addSelect('user.securityAnswerHash')
+            .where('user.email = :email', { email })
+            .getOne();
         if (!user || !user.securityAnswerHash) {
             res.status(400).json({ message: 'Invalid request' });
             return;
@@ -265,7 +275,11 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
             return;
         }
 
-        const user = await userRepository.findOneBy({ id: decoded.id });
+        const user = await userRepository
+            .createQueryBuilder('user')
+            .addSelect('user.passwordHash')
+            .where('user.id = :id', { id: decoded.id })
+            .getOne();
         if (!user) {
             res.status(400).json({ message: 'User not found' });
             return;
